@@ -13,15 +13,18 @@
 #define DEFAULT_FAR 50.0
 
 // Default camera parameters
-#define DEFAULT_X_ROT 0.0
-#define DEFAULT_Y_ROT 0.0
-#define DEFAULT_Z_ROT 0.0
-#define DEFAULT_X_POS 0.0
-#define DEFAULT_Y_POS 0.0
+#define DEFAULT_X_ROT 20.0
+#define DEFAULT_Y_ROT 45.0
 #define DEFAULT_Z_POS -10.0
 
-enum renderingMode { FILL, WIREFRAME, DOTS };
-enum projectionType { PERSPECTIVE, ORTOGRAPHIC };
+// From http://doc.qt.nokia.com/latest/qwheelevent.html
+// "Most mouse types work in steps of 15 degrees, in which case the delta
+// value is a multiple of 120; i.e., 120 units * 1/8 = 15 degrees."
+#define DELTA_2_DEGREES 1.0 / 8.0;
+#define DEGREES_2_STEPS 1.0 / 15.0;
+
+#define MOVE_MOUSE_FACTOR 0.5
+#define ROTATE_MOUSE_FACTOR 0.01
 
 class GLWidget : public QGLWidget
 {
@@ -43,15 +46,10 @@ public slots:
 
     void setXPosition(double xPos);
     void setYPosition(double yPos);
+    void setZPosition(double zPos);
 
     void setNumCubes(int numCubes);
     void forceDraw();
-
-signals:
-    void xRotationChanged(double angle);
-    void yRotationChanged(double angle);
-    void xPositionChanged(double position);
-    void yPositionChanged(double position);
 
 protected:
     bool init();
@@ -62,11 +60,10 @@ protected:
     void mouseMoveEvent(QMouseEvent *event);
     void wheelEvent(QWheelEvent *event);
 
-    bool drawCubes();
+    bool drawScene();
     void createCubeDisplayList();
+    bool drawDisplayListCube(QVector3D position);
     bool drawCube(QVector3D position, float mSide);
-    bool drawCube(QVector3D position);
-
 
 private:
     QVector3D mPosition;
@@ -75,13 +72,11 @@ private:
 
     QColor mClearColor;
 
-    renderingMode mRenderingMode;
-    projectionType mProjectionType;
-
     // Smooth zoom
     bool mZoomingIn;
     bool mZoomingOut;
     float mZoomAmount;
+    float mZoomSmoothFactor;
 
     // Ortho parameters
     double mLeft;

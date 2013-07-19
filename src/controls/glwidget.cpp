@@ -7,16 +7,16 @@
 GLWidget::GLWidget(QWidget *parent)
     : QGLWidget(parent)
 {
-    mPosition.setX(DEFAULT_X_POS);
-    mPosition.setY(DEFAULT_Y_POS);
+    mPosition.setX(0);
+    mPosition.setY(0);
     mPosition.setZ(DEFAULT_Z_POS);
 
     mRotation.setX(DEFAULT_X_ROT);
     mRotation.setY(DEFAULT_Y_ROT);
-    mRotation.setZ(DEFAULT_Z_ROT);
+    mRotation.setZ(0);
 
-    mLightPosition.setX(DEFAULT_X_POS);
-    mLightPosition.setY(DEFAULT_Y_POS);
+    mLightPosition.setX(0);
+    mLightPosition.setY(0);
     mLightPosition.setZ(DEFAULT_Z_POS);
 
     mClearColor = Qt::black;
@@ -28,12 +28,10 @@ GLWidget::GLWidget(QWidget *parent)
     mNear = DEFAULT_NEAR;
     mFar = DEFAULT_FAR;
 
-    mRenderingMode = FILL;
-    mProjectionType = PERSPECTIVE;
-
     mZoomingIn = false;
     mZoomingOut = false;
     mZoomAmount = 0.0;
+    mZoomSmoothFactor = 10.0;
 
     mNumCubes = 0;
     mCubeSize = 0;
@@ -61,20 +59,18 @@ void GLWidget::updateViewport(int width, int height)
 void GLWidget::setXRotation(double angle)
 {
     normalizeAngle(&angle);
-    if (angle != mRotation.x()) {
+    if (angle != mRotation.x())
+    {
         mRotation.setX(angle);
-        emit(xRotationChanged(angle));
-        updateGL();
     }
 }
 
 void GLWidget::setYRotation(double angle)
 {
     normalizeAngle(&angle);
-    if (angle != mRotation.y()) {
+    if (angle != mRotation.y())
+    {
         mRotation.setY(angle);
-        emit(yRotationChanged(angle));
-        updateGL();
     }
 }
 
@@ -83,8 +79,6 @@ void GLWidget::setXPosition(double xPos)
     if(xPos != mPosition.x())
     {
         mPosition.setX(xPos);
-        emit(xPositionChanged(xPos));
-        updateGL();
     }
 }
 
@@ -93,8 +87,18 @@ void GLWidget::setYPosition(double yPos)
     if(yPos != mPosition.y())
     {
         mPosition.setY(yPos);
-        emit(yPositionChanged(yPos));
-        updateGL();
+    }
+}
+
+void GLWidget::setZPosition(double zPos)
+{
+    if(zPos != mPosition.z())
+    {
+        // Check we're not too near or too far
+        if(zPos >= (DEFAULT_Z_POS) && zPos < (DEFAULT_Z_POS/2.0))
+        {
+            mPosition.setZ(zPos);
+        }
     }
 }
 
@@ -133,17 +137,17 @@ void GLWidget::paintGL()
     if(mZoomingIn)
     {
         mZoomAmount--;
-        mPosition.setZ(mPosition.z() + (1.0/10.0));
+        setZPosition(mPosition.z() + (1.0/mZoomSmoothFactor));
 
-        if(mZoomAmount == 0)
+        if(mZoomAmount <= 0)
             mZoomingIn = false;
     }
     else if(mZoomingOut)
     {
         mZoomAmount--;
-        mPosition.setZ(mPosition.z() - (1.0/10.0));
+        setZPosition(mPosition.z() - (1.0/mZoomSmoothFactor));
 
-        if(mZoomAmount == 0)
+        if(mZoomAmount <= 0)
             mZoomingOut = false;
     }
 
@@ -163,10 +167,10 @@ void GLWidget::paintGL()
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     // Draw cubes
-    drawCubes();
+    drawScene();
 }
 
-bool GLWidget::drawCubes()
+bool GLWidget::drawScene()
 {
     bool result = true;
 
@@ -176,7 +180,7 @@ bool GLWidget::drawCubes()
         {
             for(int k=-mNumCubes/2; k<=mNumCubes/2; ++k)
             {
-                result &= drawCube(QVector3D(i*mCubeSize, j*mCubeSize, k*mCubeSize));
+                result &= drawDisplayListCube(QVector3D(i*mCubeSize, j*mCubeSize, k*mCubeSize));
             }
         }
     }
@@ -209,6 +213,30 @@ void GLWidget::createCubeDisplayList()
         qDebug() << "GL Error:" << error;
         return;
     }
+}
+
+bool GLWidget::drawDisplayListCube(QVector3D position)
+{
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+
+    glTranslated(position.x(), position.y(), position.z());
+    // Draw the cube a little bit smaller, so there is a space between cubes
+    glScaled(mCubeSize*0.9, mCubeSize*0.9, mCubeSize*0.9);
+
+    glCallList(mCubeDisplayList);
+
+    glPopMatrix();
+
+    GLenum error = glGetError();
+
+    if(error != 0)
+    {
+        qDebug() << "GL Error:" << error;
+        return false;
+    }
+
+    return true;
 }
 
 bool GLWidget::drawCube(QVector3D position, float side)
@@ -314,30 +342,6 @@ bool GLWidget::drawCube(QVector3D position, float side)
     return true;
 }
 
-bool GLWidget::drawCube(QVector3D position)
-{
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-
-    glTranslated(position.x(), position.y(), position.z());
-    // Draw the cube a little bit smaller, so there is a space between cubes
-    glScaled(mCubeSize*0.9, mCubeSize*0.9, mCubeSize*0.9);
-
-    glCallList(mCubeDisplayList);
-
-    glPopMatrix();
-
-    GLenum error = glGetError();
-
-    if(error != 0)
-    {
-        qDebug() << "GL Error:" << error;
-        return false;
-    }
-
-    return true;
-}
-
 void GLWidget::resizeGL(int width, int height)
 {
     updateViewport(width, height);
@@ -355,13 +359,13 @@ void GLWidget::mouseMoveEvent(QMouseEvent *event)
 
     if(event->buttons() & Qt::LeftButton)
     {
-        setXRotation(mRotation.x() + (dy * 0.5));
-        setYRotation(mRotation.y() + (dx * 0.5));
+        setXRotation(mRotation.x() + (dy * MOVE_MOUSE_FACTOR));
+        setYRotation(mRotation.y() + (dx * MOVE_MOUSE_FACTOR));
     }
-    else if(event->buttons() & Qt::MidButton)
+    else if(event->buttons() & Qt::RightButton)
     {
-        setXPosition(mPosition.x() + (dx * 0.01));
-        setYPosition(mPosition.y() + (-dy * 0.01));
+        setXPosition(mPosition.x() + (dx * ROTATE_MOUSE_FACTOR));
+        setYPosition(mPosition.y() + (-dy * ROTATE_MOUSE_FACTOR));
     }
 
     mLastPosition = event->pos();
@@ -372,22 +376,22 @@ void GLWidget::wheelEvent(QWheelEvent *event)
     // From http://doc.qt.nokia.com/latest/qwheelevent.html
     // "Most mouse types work in steps of 15 degrees, in which case the delta
     // value is a multiple of 120; i.e., 120 units * 1/8 = 15 degrees."
-    int numDegrees = event->delta() / 8;
-    int numSteps = numDegrees / 15;
+    int numDegrees = event->delta() * DELTA_2_DEGREES;
+    int numSteps = numDegrees * DEGREES_2_STEPS;
 
     if(numSteps > 0)
         mZoomingIn = true;
     else
         mZoomingOut = true;
 
-    // Smooth zoom multiplying by 10
-    mZoomAmount = abs(numSteps * 10.0);
+    // Smooth zoom
+    mZoomAmount = abs(numSteps * mZoomSmoothFactor);
 }
 
 void GLWidget::normalizeAngle(double *angle)
 {
     while (*angle < 0)
-        *angle += 360 * 16;
+        *angle += 360;
     while (*angle > 360 * 16)
-        *angle -= 360 * 16;
+        *angle -= 360;
 }
